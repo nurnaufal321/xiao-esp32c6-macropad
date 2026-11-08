@@ -177,15 +177,6 @@ static const uint8_t HID_REPORT_MAP[] = {
     0x95, 0x01,       //   Report Count (1)
     0x75, 0x08,       //   Report Size (8)
     0x81, 0x01,       //   Input (Constant) -> Reserved byte
-    0x95, 0x05,       //   Report Count (5)
-    0x75, 0x01,       //   Report Size (1)
-    0x05, 0x08,       //   Usage Page (LEDs)
-    0x19, 0x01,       //   Usage Minimum (Num Lock)
-    0x29, 0x05,       //   Usage Maximum (Kana)
-    0x91, 0x02,       //   Output (Data, Variable, Absolute) -> LED report
-    0x95, 0x01,       //   Report Count (1)
-    0x75, 0x03,       //   Report Size (3)
-    0x91, 0x01,       //   Output (Constant) -> LED padding
     0x95, 0x06,       //   Report Count (6)
     0x75, 0x08,       //   Report Size (8)
     0x15, 0x00,       //   Logical Minimum (0)
@@ -298,21 +289,40 @@ static void forceEnableCccdNotifications(BLECharacteristic* pChar) {
     }
 }
 
+class MacropadReportCallbacks : public BLECharacteristicCallbacks {
+    void onStatus(BLECharacteristic* pCharacteristic, Status s, uint32_t code) override {
+        if (s != Status::SUCCESS_NOTIFY && s != Status::SUCCESS_INDICATE) {
+            Serial.printf("EVENT:BLE:NOTIFY_ERR:%d:%lu\n", (int)s, (unsigned long)code);
+        }
+    }
+};
+
+// Backports ESP32 Core 3.3.7 HOGP fix to Core 3.1.3:
+// Report Reference Descriptor (0x2908) and CCCD (0x2902) must be readable/writable
+// without encryption so macOS/Windows can enumerate Report IDs before link encryption finishes.
+static void fixHidReportPermissions(BLECharacteristic* pChar, BLECharacteristicCallbacks* pCb) {
+    if (pChar == nullptr) return;
+    pChar->setAccessPermissions(ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE);
+    if (pCb != nullptr) {
+        pChar->setCallbacks(pCb);
+    }
+    BLEDescriptor* p2908 = pChar->getDescriptorByUUID(BLEUUID((uint16_t)0x2908));
+    if (p2908 != nullptr) {
+        p2908->setAccessPermissions(ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE);
+    }
+    BLE2902* p2902 = (BLE2902*)pChar->getDescriptorByUUID(BLEUUID((uint16_t)0x2902));
+    if (p2902 != nullptr) {
+        p2902->setAccessPermissions(ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE);
+        p2902->setNotifications(true);
+    }
+}
+
 class MacropadServerCallbacks : public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) override {
         g_bleConnected = true;
         forceEnableCccdNotifications(g_pKbInputChar);
         forceEnableCccdNotifications(g_pMediaInputChar);
         Serial.println("EVENT:BLE:CONNECTED");
-    }
-
-    void onConnect(BLEServer* pServer, esp_ble_gatts_cb_param_t* param) override {
-        g_bleConnected = true;
-        forceEnableCccdNotifications(g_pKbInputChar);
-        forceEnableCccdNotifications(g_pMediaInputChar);
-        if (param != nullptr) {
-            esp_ble_set_encryption(param->connect.remote_bda, ESP_BLE_SEC_ENCRYPT_NO_MITM);
-        }
     }
 
     void onDisconnect(BLEServer* pServer) override {
@@ -425,6 +435,7 @@ void resetFactoryKeymaps() {
 
 void initBleHid() {
     BLEDevice::init("XIAO-C6 Macropad");
+    BLEDevice::setEncryptionLevel(ESP_BLE_SEC_ENCRYPT_NO_MITM);
 
     // Configure "Just Works" BLE Security with Bonding (compatible with Core 3.1.x & 3.3.x)
     BLESecurity* pSecurity = new BLESecurity();
@@ -439,18 +450,22 @@ void initBleHid() {
 
     g_pHid = new BLEHIDDevice(g_pServer);
     g_pHid->manufacturer()->setValue("Seeed Studio DIY");
-    g_pHid->pnp(0x02, 0x303A, 0xC609, 0x0100);
+    g_pHid->pnp(0x02, 0x05ac, 0x820a, 0x0110);
     g_pHid->hidInfo(0x00, 0x01);
     g_pHid->reportMap((uint8_t*)HID_REPORT_MAP, sizeof(HID_REPORT_MAP));
 
+    MacropadReportCallbacks* pReportCb = new MacropadReportCallbacks();
     g_pKbInputChar    = g_pHid->inputReport(REPORT_ID_KEYBOARD);
     g_pMediaInputChar = g_pHid->inputReport(REPORT_ID_MEDIA);
-    // Crucial fix for ESP32 BLEHIDDevice: enable 0x2902 CCCD notifications by default
-    // so bonded hosts (macOS/Windows) don't get silently dropped after an ESP32 reboot/reflash.
-    forceEnableCccdNotifications(g_pKbInputChar);
-    forceEnableCccdNotifications(g_pMediaInputChar);
-    g_pHid->startServices();
+
+    // Crucial fix for ESP32 BLEHIDDevice on Core 3.1.x:
+    // Unlock 0x2908 (Report Reference) & 0x2902 (CCCD) permissions before startServices()
+    // so macOS/Windows can enumerate Report IDs and enable notifications cleanly.
+    fixHidReportPermissions(g_pKbInputChar, pReportCb);
+    fixHidReportPermissions(g_pMediaInputChar, pReportCb);
+
     g_pHid->setBatteryLevel(100);
+    g_pHid->startServices();
 
     BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
     pAdvertising->setAppearance(HID_KEYBOARD);
@@ -479,6 +494,7 @@ void sendBleKeyboardReport(uint8_t modifiers, uint8_t keycode) {
     uint8_t report[8] = { modifiers, 0x00, keycode, 0x00, 0x00, 0x00, 0x00, 0x00 };
     g_pKbInputChar->setValue(report, sizeof(report));
     g_pKbInputChar->notify();
+    Serial.printf("EVENT:BLE:REPORT_SENT:KB:%u:%u\n", modifiers, keycode);
 }
 
 void releaseBleKeyboardReport() {
@@ -499,6 +515,9 @@ void sendBleMediaReport(uint16_t mediaUsage) {
     };
     g_pMediaInputChar->setValue(report, sizeof(report));
     g_pMediaInputChar->notify();
+    if (mediaUsage != 0) {
+        Serial.printf("EVENT:BLE:REPORT_SENT:MEDIA:%u\n", mediaUsage);
+    }
 }
 
 void releaseBleMediaReport() {
