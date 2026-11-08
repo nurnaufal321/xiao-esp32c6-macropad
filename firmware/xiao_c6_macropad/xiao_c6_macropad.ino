@@ -411,6 +411,7 @@ void initBleHid() {
     pSecurity->setCapability(ESP_IO_CAP_NONE);
     pSecurity->setAuthenticationMode(ESP_LE_AUTH_REQ_SC_BOND);
     pSecurity->setInitEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
+    pSecurity->setRespEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
     BLEDevice::setSecurityCallbacks(new MacropadSecurityCallbacks());
 
     g_pServer = BLEDevice::createServer();
@@ -442,13 +443,25 @@ bool isBleReady() {
 
 void sendBleKeyboardReport(uint8_t modifiers, uint8_t keycode) {
     if (!isBleReady() || g_pKbInputChar == nullptr) return;
+    if (modifiers != 0 && keycode != 0) {
+        // macOS IOHIDEventSystem requires the modifier byte (e.g. Command) to be
+        // sent first before the main keycode arrives in the next report.
+        uint8_t modOnly[8] = { modifiers, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+        g_pKbInputChar->setValue(modOnly, sizeof(modOnly));
+        g_pKbInputChar->notify();
+        delay(12);
+    }
     uint8_t report[8] = { modifiers, 0x00, keycode, 0x00, 0x00, 0x00, 0x00, 0x00 };
     g_pKbInputChar->setValue(report, sizeof(report));
     g_pKbInputChar->notify();
 }
 
 void releaseBleKeyboardReport() {
-    sendBleKeyboardReport(0x00, 0x00);
+    if (!isBleReady() || g_pKbInputChar == nullptr) return;
+    delay(8);
+    uint8_t report[8] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+    g_pKbInputChar->setValue(report, sizeof(report));
+    g_pKbInputChar->notify();
 }
 
 void sendBleMediaReport(uint16_t mediaUsage) {
