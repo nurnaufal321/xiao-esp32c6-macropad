@@ -33,6 +33,7 @@
 #include <BLEUtils.h>
 #include <BLEServer.h>
 #include <BLEHIDDevice.h>
+#include <BLE2902.h>
 #include <BLESecurity.h>
 #include <HIDTypes.h>
 
@@ -289,10 +290,29 @@ static BLECharacteristic* g_pKbInputChar    = nullptr;
 static BLECharacteristic* g_pMediaInputChar = nullptr;
 static volatile bool      g_bleConnected    = false;
 
+static void forceEnableCccdNotifications(BLECharacteristic* pChar) {
+    if (pChar == nullptr) return;
+    BLE2902* p2902 = (BLE2902*)pChar->getDescriptorByUUID((uint16_t)0x2902);
+    if (p2902 != nullptr) {
+        p2902->setNotifications(true);
+    }
+}
+
 class MacropadServerCallbacks : public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) override {
         g_bleConnected = true;
+        forceEnableCccdNotifications(g_pKbInputChar);
+        forceEnableCccdNotifications(g_pMediaInputChar);
         Serial.println("EVENT:BLE:CONNECTED");
+    }
+
+    void onConnect(BLEServer* pServer, esp_ble_gatts_cb_param_t* param) override {
+        g_bleConnected = true;
+        forceEnableCccdNotifications(g_pKbInputChar);
+        forceEnableCccdNotifications(g_pMediaInputChar);
+        if (param != nullptr) {
+            esp_ble_set_encryption(param->connect.remote_bda, ESP_BLE_SEC_ENCRYPT_NO_MITM);
+        }
     }
 
     void onDisconnect(BLEServer* pServer) override {
@@ -425,6 +445,10 @@ void initBleHid() {
 
     g_pKbInputChar    = g_pHid->inputReport(REPORT_ID_KEYBOARD);
     g_pMediaInputChar = g_pHid->inputReport(REPORT_ID_MEDIA);
+    // Crucial fix for ESP32 BLEHIDDevice: enable 0x2902 CCCD notifications by default
+    // so bonded hosts (macOS/Windows) don't get silently dropped after an ESP32 reboot/reflash.
+    forceEnableCccdNotifications(g_pKbInputChar);
+    forceEnableCccdNotifications(g_pMediaInputChar);
     g_pHid->startServices();
     g_pHid->setBatteryLevel(100);
 
@@ -443,6 +467,7 @@ bool isBleReady() {
 
 void sendBleKeyboardReport(uint8_t modifiers, uint8_t keycode) {
     if (!isBleReady() || g_pKbInputChar == nullptr) return;
+    forceEnableCccdNotifications(g_pKbInputChar);
     if (modifiers != 0 && keycode != 0) {
         // macOS IOHIDEventSystem requires the modifier byte (e.g. Command) to be
         // sent first before the main keycode arrives in the next report.
@@ -458,6 +483,7 @@ void sendBleKeyboardReport(uint8_t modifiers, uint8_t keycode) {
 
 void releaseBleKeyboardReport() {
     if (!isBleReady() || g_pKbInputChar == nullptr) return;
+    forceEnableCccdNotifications(g_pKbInputChar);
     delay(8);
     uint8_t report[8] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
     g_pKbInputChar->setValue(report, sizeof(report));
@@ -466,6 +492,7 @@ void releaseBleKeyboardReport() {
 
 void sendBleMediaReport(uint16_t mediaUsage) {
     if (!isBleReady() || g_pMediaInputChar == nullptr) return;
+    forceEnableCccdNotifications(g_pMediaInputChar);
     uint8_t report[2] = {
         (uint8_t)(mediaUsage & 0xFF),
         (uint8_t)((mediaUsage >> 8) & 0xFF)
