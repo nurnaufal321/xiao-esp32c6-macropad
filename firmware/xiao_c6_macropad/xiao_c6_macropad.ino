@@ -36,6 +36,7 @@
 #include <BLE2902.h>
 #include <BLESecurity.h>
 #include <HIDTypes.h>
+#include "esp_mac.h"
 
 // ============================================================================
 // 1. HARDWARE PIN DEFINITIONS (Seeed Studio XIAO ESP32C6)
@@ -154,18 +155,18 @@ static const uint16_t MEDIA_VOL_UP      = 0x00E9;
 static const uint16_t MEDIA_VOL_DOWN    = 0x00EA;
 
 // ============================================================================
-// 3. COMPOSITE BLE HID REPORT DESCRIPTOR (Keyboard ID 1 + Media ID 2)
+// 3. STANDARD 8-BYTE BOOT/NKRO BLE HID REPORT DESCRIPTOR (No Report ID Prefix)
 // ============================================================================
+// Using Report ID 0 (no 0x85 Report ID tag) guarantees an exact 8-byte report
+// ([modifier, 0x00, key1..key6]) across macOS, Windows, iOS, and Android with
+// zero possibility of an 8-byte vs 9-byte Report ID header mismatch.
 
-static const uint8_t REPORT_ID_KEYBOARD = 0x01;
-static const uint8_t REPORT_ID_MEDIA    = 0x02;
+static const uint8_t REPORT_ID_KEYBOARD = 0x00;
 
 static const uint8_t HID_REPORT_MAP[] = {
-    // ---- Report ID 1: Standard 6KRO + Modifiers Keyboard ----
     0x05, 0x01,       // Usage Page (Generic Desktop)
     0x09, 0x06,       // Usage (Keyboard)
     0xA1, 0x01,       // Collection (Application)
-    0x85, REPORT_ID_KEYBOARD, // Report ID (1)
     0x05, 0x07,       //   Usage Page (Key Codes)
     0x19, 0xE0,       //   Usage Minimum (224 - Left Control)
     0x29, 0xE7,       //   Usage Maximum (231 - Right GUI)
@@ -180,25 +181,11 @@ static const uint8_t HID_REPORT_MAP[] = {
     0x95, 0x06,       //   Report Count (6)
     0x75, 0x08,       //   Report Size (8)
     0x15, 0x00,       //   Logical Minimum (0)
-    0x25, 0x65,       //   Logical Maximum (101)
+    0x26, 0xFF, 0x00, //   Logical Maximum (255 - includes Volume/Mute 0x7F..0x81)
     0x05, 0x07,       //   Usage Page (Key Codes)
     0x19, 0x00,       //   Usage Minimum (0)
-    0x29, 0x65,       //   Usage Maximum (101)
+    0x2A, 0xFF, 0x00, //   Usage Maximum (255)
     0x81, 0x00,       //   Input (Data, Array) -> 6 Keycodes
-    0xC0,             // End Collection
-
-    // ---- Report ID 2: Consumer Control (Media Keys, 16-bit usage code) ----
-    0x05, 0x0C,       // Usage Page (Consumer)
-    0x09, 0x01,       // Usage (Consumer Control)
-    0xA1, 0x01,       // Collection (Application)
-    0x85, REPORT_ID_MEDIA, // Report ID (2)
-    0x15, 0x00,       //   Logical Minimum (0)
-    0x26, 0xFF, 0x03, //   Logical Maximum (0x03FF)
-    0x19, 0x00,       //   Usage Minimum (0)
-    0x2A, 0xFF, 0x03, //   Usage Maximum (0x03FF)
-    0x75, 0x10,       //   Report Size (16 bits)
-    0x95, 0x01,       //   Report Count (1)
-    0x81, 0x00,       //   Input (Data, Array, Absolute)
     0xC0              // End Collection
 };
 
@@ -275,11 +262,11 @@ static Preferences g_prefs;
 // 5. BLE HID SERVER STATE (Built-in ESP32 Core 3.x BLEHIDDevice)
 // ============================================================================
 
-static BLEServer*         g_pServer         = nullptr;
-static BLEHIDDevice*      g_pHid            = nullptr;
-static BLECharacteristic* g_pKbInputChar    = nullptr;
-static BLECharacteristic* g_pMediaInputChar = nullptr;
-static volatile bool      g_bleConnected    = false;
+static BLEServer*         g_pServer      = nullptr;
+static BLEHIDDevice*      g_pHid         = nullptr;
+static BLECharacteristic* g_pKbInputChar = nullptr;
+static BLECharacteristic* g_pKbOutputChar = nullptr;
+static volatile bool      g_bleConnected = false;
 
 static void forceEnableCccdNotifications(BLECharacteristic* pChar) {
     if (pChar == nullptr) return;
@@ -321,7 +308,6 @@ class MacropadServerCallbacks : public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) override {
         g_bleConnected = true;
         forceEnableCccdNotifications(g_pKbInputChar);
-        forceEnableCccdNotifications(g_pMediaInputChar);
         Serial.println("EVENT:BLE:CONNECTED");
     }
 
@@ -450,29 +436,29 @@ void initBleHid() {
 
     g_pHid = new BLEHIDDevice(g_pServer);
     g_pHid->manufacturer()->setValue("Seeed Studio DIY");
-    g_pHid->pnp(0x02, 0x05ac, 0x820a, 0x0110);
+    g_pHid->pnp(0x02, 0x2886, 0x0046, 0x0110);
     g_pHid->hidInfo(0x00, 0x01);
     g_pHid->reportMap((uint8_t*)HID_REPORT_MAP, sizeof(HID_REPORT_MAP));
 
     MacropadReportCallbacks* pReportCb = new MacropadReportCallbacks();
-    g_pKbInputChar    = g_pHid->inputReport(REPORT_ID_KEYBOARD);
-    g_pMediaInputChar = g_pHid->inputReport(REPORT_ID_MEDIA);
+    g_pKbInputChar = g_pHid->inputReport(REPORT_ID_KEYBOARD);
 
-    // Crucial fix for ESP32 BLEHIDDevice on Core 3.1.x:
     // Unlock 0x2908 (Report Reference) & 0x2902 (CCCD) permissions before startServices()
-    // so macOS/Windows can enumerate Report IDs and enable notifications cleanly.
     fixHidReportPermissions(g_pKbInputChar, pReportCb);
-    fixHidReportPermissions(g_pMediaInputChar, pReportCb);
 
-    g_pHid->setBatteryLevel(100);
+    // IMPORTANT: startServices() MUST be called before setBatteryLevel(100), because
+    // BLECharacteristic::m_pService is only initialized inside BLEService::start()!
     g_pHid->startServices();
+    g_pHid->setBatteryLevel(100);
+
+    // Set initial 8-byte zero report AFTER startServices() (once GATT attribute handle is created)
+    uint8_t zeroKb[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+    g_pKbInputChar->setValue(zeroKb, sizeof(zeroKb));
 
     BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
     pAdvertising->setAppearance(HID_KEYBOARD);
     pAdvertising->addServiceUUID(g_pHid->hidService()->getUUID());
     pAdvertising->setScanResponse(true);
-    pAdvertising->setMinPreferred(0x06);
-    pAdvertising->setMaxPreferred(0x12);
     BLEDevice::startAdvertising();
 }
 
@@ -507,21 +493,26 @@ void releaseBleKeyboardReport() {
 }
 
 void sendBleMediaReport(uint16_t mediaUsage) {
-    if (!isBleReady() || g_pMediaInputChar == nullptr) return;
-    forceEnableCccdNotifications(g_pMediaInputChar);
-    uint8_t report[2] = {
-        (uint8_t)(mediaUsage & 0xFF),
-        (uint8_t)((mediaUsage >> 8) & 0xFF)
-    };
-    g_pMediaInputChar->setValue(report, sizeof(report));
-    g_pMediaInputChar->notify();
-    if (mediaUsage != 0) {
-        Serial.printf("EVENT:BLE:REPORT_SENT:MEDIA:%u\n", mediaUsage);
+    if (mediaUsage == 0) {
+        releaseBleKeyboardReport();
+        return;
     }
+    uint8_t hidKey = 0;
+    switch (mediaUsage) {
+        case MEDIA_VOL_UP:     hidKey = 0x80; break; // Keyboard Volume Up
+        case MEDIA_VOL_DOWN:   hidKey = 0x81; break; // Keyboard Volume Down
+        case MEDIA_MUTE:       hidKey = 0x7F; break; // Keyboard Mute
+        case MEDIA_PLAY_PAUSE: hidKey = HID_KEY_F8; break;
+        case MEDIA_PREV_TRACK: hidKey = HID_KEY_F7; break;
+        case MEDIA_NEXT_TRACK: hidKey = HID_KEY_F9; break;
+        default:               hidKey = 0x80; break;
+    }
+    sendBleKeyboardReport(0x00, hidKey);
+    Serial.printf("EVENT:BLE:REPORT_SENT:MEDIA:%u\n", mediaUsage);
 }
 
 void releaseBleMediaReport() {
-    sendBleMediaReport(0x0000);
+    releaseBleKeyboardReport();
 }
 
 // Helper to convert an ASCII character to a USB HID Keycode + Shift modifier
