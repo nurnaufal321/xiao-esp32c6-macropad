@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MACROPAD C6</title>
+  <meta name="description" content="Configure all 9 keys, OS mode, and Bluetooth/Serial settings on a Seeed Studio XIAO ESP32C6 Macropad, straight from Chrome or Edge.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' fill='%23000'/%3E%3Crect x='6' y='6' width='6' height='6' fill='%23fff'/%3E%3Crect x='13' y='6' width='6' height='6' fill='%23fff'/%3E%3Crect x='20' y='6' width='6' height='6' fill='%23fff'/%3E%3Crect x='6' y='13' width='6' height='6' fill='%23fff'/%3E%3Crect x='13' y='13' width='6' height='6' fill='%23f00'/%3E%3Crect x='20' y='13' width='6' height='6' fill='%23fff'/%3E%3Crect x='6' y='20' width='6' height='6' fill='%23fff'/%3E%3Crect x='13' y='20' width='6' height='6' fill='%23fff'/%3E%3Crect x='20' y='20' width='6' height='6' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Mono&family=Work+Sans:wght@400;600&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>MACROPAD C6</h1>
+    <p class="tagline">
+      <span>A 9-key zero-diode Bluetooth &amp; USB Serial macropad on a Seeed Studio XIAO ESP32C6.</span>
+      <span>Plug in the USB-C cable. Connect. Click any key to remap &amp; save to flash.</span>
+    </p>
+  </header>
+
+  <main>
+    <div id="noserial" class="banner warn" hidden>
+      This browser can't talk to the board over USB. Open this page in <strong>Chrome</strong> or <strong>Edge</strong> on a Mac or Windows computer.
+      You can still explore the 3×3 keymap editor below.
+    </div>
+
+    <!-- Connection Card -->
+    <section class="card conn">
+      <div class="conn-text">
+        <p id="board-name" class="title">No board connected</p>
+        <div class="chips">
+          <span id="board-status" class="chip">Not connected</span>
+          <span id="ble-status" class="chip" hidden>BLE: Idle</span>
+          <span id="mode-status" class="chip" hidden>OS: MAC</span>
+          <span class="chip ok">Saved in NVS flash</span>
+        </div>
+      </div>
+      <button id="connect">Connect</button>
+    </section>
+
+    <!-- 3x3 Visual Key Grid + Embedded Board Controls + Key Editor -->
+    <section class="card">
+      <div class="head">
+        <h2>3×3 Keymap</h2>
+        <span class="meta" id="editing-meta">Editing: MAC layer · Press any switch on the board to select it</span>
+      </div>
+
+      <div class="workspace">
+        <!-- Left Column: 3x3 Physical Switch Grid + Embedded Board Status & Controls -->
+        <div class="left-col">
+          <div id="key-grid" class="key-grid" role="group" aria-label="3 by 3 Macropad Key Grid"></div>
+
+          <div class="board-box">
+            <div class="board-box-head">
+              <div>
+                <span id="summary" class="board-summary">No board connected</span>
+                <p id="status" class="status" role="status">Connect over USB-C to sync NVS keymap.</p>
+              </div>
+              <button id="reset-map" class="small" disabled>Reset Default</button>
+            </div>
+
+            <div class="board-controls">
+              <div>
+                <p class="label">Active OS Layer (On Board)</p>
+                <div class="seg" id="os-toggle">
+                  <button data-os="MAC" class="on">MAC (Cmd)</button>
+                  <button data-os="WIN">WINDOWS (Ctrl / Win)</button>
+                </div>
+              </div>
+
+              <div>
+                <p class="label">Bluetooth HID Output</p>
+                <div class="seg" id="ble-toggle">
+                  <button data-ble="1" class="on" disabled>BLE Enabled</button>
+                  <button data-ble="0" disabled>BLE Muted (Serial)</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Selected Key Inspector & Editor -->
+        <div class="editor" id="key-editor">
+          <div class="editor-head">
+            <div>
+              <p class="label" id="editor-key-title">KEY 1 (TOP-LEFT · PIN D0)</p>
+              <p class="sub" id="editor-key-sub">Configuring for MAC layer</p>
+            </div>
+            <span id="live-press-badge" class="chip ok" hidden>PRESSED NOW</span>
+          </div>
+
+          <div class="fields">
+            <label class="field">
+              <span class="label">Action Type</span>
+              <select id="action-type">
+                <option value="1">Keyboard Shortcut (Modifiers + Key)</option>
+                <option value="2">Media Control (Vol / Play / Mute)</option>
+                <option value="3">Text Macro (Type ASCII String)</option>
+                <option value="0">None (USB Serial Event Only)</option>
+              </select>
+            </label>
+
+            <!-- Type 1: Keyboard Shortcut Controls -->
+            <div id="pane-key" class="pane">
+              <div class="field">
+                <span class="label">Modifiers</span>
+                <div class="mod-grid">
+                  <label class="check"><input type="checkbox" id="mod-gui" value="8"> <span id="mod-gui-label">Cmd (GUI)</span></label>
+                  <label class="check"><input type="checkbox" id="mod-ctrl" value="1"> <span>Ctrl</span></label>
+                  <label class="check"><input type="checkbox" id="mod-shift" value="2"> <span>Shift</span></label>
+                  <label class="check"><input type="checkbox" id="mod-alt" value="4"> <span id="mod-alt-label">Option (Alt)</span></label>
+                </div>
+              </div>
+
+              <div class="field">
+                <div class="row-between">
+                  <span class="label">Key</span>
+                  <button type="button" id="record-btn" class="small">Record Keystroke</button>
+                </div>
+                <select id="key-code"></select>
+              </div>
+            </div>
+
+            <!-- Type 2: Consumer Media Controls -->
+            <div id="pane-media" class="pane" hidden>
+              <label class="field">
+                <span class="label">Media Function</span>
+                <select id="media-code">
+                  <option value="233">Volume Up (Vol +)</option>
+                  <option value="234">Volume Down (Vol −)</option>
+                  <option value="226">Mute Audio</option>
+                  <option value="205">Play / Pause</option>
+                  <option value="181">Next Track</option>
+                  <option value="182">Previous Track</option>
+                  <option value="183">Stop</option>
+                </select>
+              </label>
+            </div>
+
+            <!-- Type 3: Text String Macro -->
+            <div id="pane-text" class="pane" hidden>
+              <label class="field">
+                <span class="label">Text to Type (Max 23 chars)</span>
+                <input type="text" id="macro-text" maxlength="23" placeholder="e.g. git status" autocomplete="off">
+              </label>
+              <p class="sub">Supports letters A–Z, numbers 0–9, and spaces.</p>
+            </div>
+
+            <!-- Quick Presets -->
+            <div class="field">
+              <span class="label">Quick Presets</span>
+              <div id="presets" class="preset-grid"></div>
+            </div>
+
+            <div class="actions">
+              <button id="save-key" class="primary" disabled>Save Key to Board</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Backup / Export / Import Card -->
+    <section class="card">
+      <div class="head">
+        <h2>Backup &amp; Profile JSON</h2>
+        <span class="meta">Export or restore your 9-key setup</span>
+      </div>
+      <div class="backup-row">
+        <p class="sub">Download your Mac &amp; Windows keymaps as a JSON file, or load a saved profile and push all 9 keys to the board at once.</p>
+        <div class="actions">
+          <button id="export-json" class="small">Export JSON</button>
+          <button id="import-json-btn" class="small">Import JSON</button>
+          <input type="file" id="import-json-file" accept=".json,application/json" hidden>
+        </div>
+      </div>
+    </section>
+
+    <details class="log" open>
+      <summary>Activity &amp; Live Keypress Log</summary>
+      <pre id="log"></pre>
+    </details>
+  </main>
+
+  <footer>
+    <div class="inner">
+      <p class="big">MACROPAD C6</p>
+      <p class="kicker">Zero-Diode Direct-Pin 3×3 Macropad on Seeed Studio XIAO ESP32C6.</p>
+      <div class="foot-cols">
+        <div>
+          <p class="label">Hardware Wiring</p>
+          <p>Switches 1–9 wire directly to pins <code>D0</code>–<code>D8</code>. The other leg of all 9 switches daisy-chains to <code>GND</code>. Zero diodes required.</p>
+        </div>
+        <div>
+          <p class="label">Flash Once</p>
+          <p>All keybindings for both Mac and Windows modes are stored in the ESP32-C6's non-volatile flash memory (NVS) and persist across power-offs.</p>
+        </div>
+        <div>
+          <p class="label">Your Data</p>
+          <p>Nothing leaves your browser. This page talks directly to your XIAO ESP32C6 over the USB-C cable via Web Serial.</p>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="protocol.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
