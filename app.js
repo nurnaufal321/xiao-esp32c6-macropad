@@ -70,10 +70,13 @@ const HID_KEYS = [
   { code: 46, label: '= (Equal)',      eventKey: 'Equal' },
   { code: 47, label: '[ (Left Bracket)',  eventKey: 'BracketLeft' },
   { code: 48, label: '] (Right Bracket)', eventKey: 'BracketRight' },
-  { code: 51, label: '; (Semicolon)',  eventKey: 'Semicolon' },
-  { code: 54, label: ', (Comma)',      eventKey: 'Comma' },
-  { code: 55, label: '. (Period)',     eventKey: 'Period' },
-  { code: 56, label: '/ (Slash)',      eventKey: 'Slash' },
+  { code: 49, label: '\\ (Backslash)',    eventKey: 'Backslash' },
+  { code: 51, label: '; (Semicolon)',     eventKey: 'Semicolon' },
+  { code: 52, label: "' (Quote)",         eventKey: 'Quote' },
+  { code: 53, label: '` (Backtick / ~)',  eventKey: 'Backquote' },
+  { code: 54, label: ', (Comma)',         eventKey: 'Comma' },
+  { code: 55, label: '. (Period)',        eventKey: 'Period' },
+  { code: 56, label: '/ (Slash)',         eventKey: 'Slash' },
   { code: 58, label: 'F1',  eventKey: 'F1' },
   { code: 59, label: 'F2',  eventKey: 'F2' },
   { code: 60, label: 'F3',  eventKey: 'F3' },
@@ -90,6 +93,11 @@ const HID_KEYS = [
   { code: 80, label: 'Left Arrow',  eventKey: 'ArrowLeft' },
   { code: 81, label: 'Down Arrow',  eventKey: 'ArrowDown' },
   { code: 82, label: 'Up Arrow',    eventKey: 'ArrowUp' },
+  { code: 76, label: 'Delete (Forward)', eventKey: 'Delete' },
+  { code: 74, label: 'Home',        eventKey: 'Home' },
+  { code: 77, label: 'End',         eventKey: 'End' },
+  { code: 75, label: 'Page Up',     eventKey: 'PageUp' },
+  { code: 78, label: 'Page Down',   eventKey: 'PageDown' },
 ];
 
 const MEDIA_NAMES = {
@@ -106,7 +114,7 @@ const MEDIA_NAMES = {
 const QUICK_PRESETS = [
   { name: 'Copy',        mac: { type: 1, mod: 8,  code: 6  }, win: { type: 1, mod: 1,  code: 6  } },
   { name: 'Paste',       mac: { type: 1, mod: 8,  code: 25 }, win: { type: 1, mod: 1,  code: 25 } },
-  { name: 'Cut',         mac: { type: 1, mod: 8,  code: 27 }, win: { type: 1, mod: 1,  code: 27 } },
+  { name: 'App Windows', mac: { type: 1, mod: 8,  code: 53 }, win: { type: 1, mod: 4,  code: 43 } },
   { name: 'Undo',        mac: { type: 1, mod: 8,  code: 29 }, win: { type: 1, mod: 1,  code: 29 } },
   { name: 'Redo',        mac: { type: 1, mod: 10, code: 29 }, win: { type: 1, mod: 1,  code: 28 } },
   { name: 'Screenshot',  mac: { type: 1, mod: 10, code: 33 }, win: { type: 1, mod: 10, code: 22 } },
