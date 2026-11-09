@@ -1,13 +1,26 @@
 # Seeed Studio XIAO ESP32C6 — 9-Key DIY Macropad (No Diodes Required)
 
-A complete **Direct-Pin (Zero-Diode)** 9-Key Macropad firmware and hardware wiring guide for the **Seeed Studio XIAO ESP32C6**.
+A complete **Direct-Pin (Zero-Diode)** 9-Key Macropad firmware, hardware wiring guide, and **Web Serial Configurator App** for the **Seeed Studio XIAO ESP32C6**.
 
+- **🌐 Live Web Serial Configurator:** [nurnaufal321.github.io/xiao-esp32c6-macropad](https://nurnaufal321.github.io/xiao-esp32c6-macropad/)
 - **Zero Diodes / Zero External Resistors:** Each switch wires directly to its own GPIO pin (`D0`–`D8`) with internal pull-ups enabled, and all 9 switches share a single daisy-chained `GND` wire.
 - **True 9-Key Rollover (NKRO):** Because we don't multiplex rows and columns without diodes, you can press any combination of keys simultaneously with zero ghosting.
-- **Mac & Windows Ready:** Built-in persistent **Mac (`Cmd`) / Windows (`Ctrl`/`Win`) Mode Toggle** (hold **Key 1 + Key 9** for 1.5 seconds).
-- **Hybrid Bluetooth LE HID + USB-C Serial:**
-  - Works wirelessly over **Bluetooth LE** (Keyboard Shortcuts + Media Volume/Play/Pause + Text Macros).
-  - Simultaneously outputs clean `KEY:<1-9>:DOWN` / `UP` events over **USB-C Serial** (`115200` baud) AND allows live reprogramming of any key into onboard flash memory (`Preferences` / NVS) over Serial **without reflashing**!
+- **Mac & Windows Ready:** Built-in persistent **Mac (`Cmd`) / Windows (`Ctrl`/`Win`) Mode Toggle** (hold **Key 1 + Key 9** for 1.5 seconds, or toggle from the Web App).
+- **Hybrid Bluetooth LE HID + USB-C Web Serial:**
+  - Works wirelessly over **Bluetooth LE** (Keyboard Shortcuts + Media Play/Pause/Prev/Next/Stop + Volume/Mute + Text Macros).
+  - Simultaneously connects to the Web Serial Configurator with real-time 3×3 keypress lighting and one-click key remapping saved directly to non-volatile flash memory (`Preferences` / NVS) **without reflashing**!
+
+---
+
+## 🌐 Web Serial Configurator
+
+You can configure and customize your macropad directly in Chrome, Edge, or Opera without installing any software or reflashing:
+
+👉 **[Launch the Web Configurator](https://nurnaufal321.github.io/xiao-esp32c6-macropad/)**
+
+- **Live 3×3 Key Visualizer:** Keys light up in real time on screen when pressed on the physical macropad.
+- **One-Click Remapping:** Choose from presets (`Copy`, `Paste`, `Screenshot`, `App Windows Cmd+\``, `Play/Pause`, `Vol+`, `Vol-`, `Mute`, etc.), customize shortcut keys and modifier keys, or define custom text macros.
+- **OS Layer Management:** Toggle between Mac and Windows layer configurations and save them straight to flash memory.
 
 ---
 
@@ -84,9 +97,8 @@ Every mechanical switch (Cherry MX, Kailh, Gateron, etc.) has **2 metal pins (le
      https://espressif.github.io/arduino-esp32/package_esp32_index.json
      ```
    - Open **Tools $\rightarrow$ Board $\rightarrow$ Boards Manager**, search for **`esp32`** by *Espressif Systems*, and install **version 3.0.x or newer**.
-3. **Install the `NimBLE-Arduino` Library:**
-   - Open **Tools $\rightarrow$ Manage Libraries** (or the Library Manager icon on the left).
-   - Search for **`NimBLE-Arduino`** (by *h2zero*) and click **Install**.
+3. **No External Libraries Required:**
+   - The firmware uses the official built-in ESP32 BLE HID and Preferences libraries included with the ESP32 Core 3.x package.
 4. **Configure Board Settings:**
    - **Tools $\rightarrow$ Board $\rightarrow$ esp32** $\rightarrow$ select **`XIAO_ESP32C6`**
    - **Tools $\rightarrow$ USB CDC On Boot** $\rightarrow$ select **`Enabled`** *(Crucial so USB Serial works!)*
