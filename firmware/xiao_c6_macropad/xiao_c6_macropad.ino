@@ -155,38 +155,65 @@ static const uint16_t MEDIA_VOL_UP      = 0x00E9;
 static const uint16_t MEDIA_VOL_DOWN    = 0x00EA;
 
 // ============================================================================
-// 3. STANDARD 8-BYTE BOOT/NKRO BLE HID REPORT DESCRIPTOR (No Report ID Prefix)
+// 3. COMPOSITE BLE HID REPORT DESCRIPTOR (Report ID 1: Keyboard, Report ID 2: Media)
 // ============================================================================
-// Using Report ID 0 (no 0x85 Report ID tag) guarantees an exact 8-byte report
-// ([modifier, 0x00, key1..key6]) across macOS, Windows, iOS, and Android with
-// zero possibility of an 8-byte vs 9-byte Report ID header mismatch.
 
-static const uint8_t REPORT_ID_KEYBOARD = 0x00;
+static const uint8_t REPORT_ID_KEYBOARD = 0x01;
+static const uint8_t REPORT_ID_MEDIA    = 0x02;
 
 static const uint8_t HID_REPORT_MAP[] = {
-    0x05, 0x01,       // Usage Page (Generic Desktop)
-    0x09, 0x06,       // Usage (Keyboard)
-    0xA1, 0x01,       // Collection (Application)
-    0x05, 0x07,       //   Usage Page (Key Codes)
-    0x19, 0xE0,       //   Usage Minimum (224 - Left Control)
-    0x29, 0xE7,       //   Usage Maximum (231 - Right GUI)
-    0x15, 0x00,       //   Logical Minimum (0)
-    0x25, 0x01,       //   Logical Maximum (1)
-    0x75, 0x01,       //   Report Size (1 bit)
-    0x95, 0x08,       //   Report Count (8 bits)
-    0x81, 0x02,       //   Input (Data, Variable, Absolute) -> Modifier byte
-    0x95, 0x01,       //   Report Count (1)
-    0x75, 0x08,       //   Report Size (8)
-    0x81, 0x01,       //   Input (Constant) -> Reserved byte
-    0x95, 0x06,       //   Report Count (6)
-    0x75, 0x08,       //   Report Size (8)
-    0x15, 0x00,       //   Logical Minimum (0)
-    0x26, 0xFF, 0x00, //   Logical Maximum (255 - includes Volume/Mute 0x7F..0x81)
-    0x05, 0x07,       //   Usage Page (Key Codes)
-    0x19, 0x00,       //   Usage Minimum (0)
-    0x2A, 0xFF, 0x00, //   Usage Maximum (255)
-    0x81, 0x00,       //   Input (Data, Array) -> 6 Keycodes
-    0xC0              // End Collection
+    // ------------------------------------------------------------------------
+    // Collection 1: Standard 8-Byte Keyboard + Volume/Mute (Report ID 1)
+    // ------------------------------------------------------------------------
+    0x05, 0x01,                   // Usage Page (Generic Desktop)
+    0x09, 0x06,                   // Usage (Keyboard)
+    0xA1, 0x01,                   // Collection (Application)
+    0x85, REPORT_ID_KEYBOARD,     //   Report ID (1)
+    // Byte 0: 8 Modifier bits (Left Control .. Right GUI)
+    0x05, 0x07,                   //   Usage Page (Key Codes)
+    0x19, 0xE0,                   //   Usage Minimum (224 - Left Control)
+    0x29, 0xE7,                   //   Usage Maximum (231 - Right GUI)
+    0x15, 0x00,                   //   Logical Minimum (0)
+    0x25, 0x01,                   //   Logical Maximum (1)
+    0x75, 0x01,                   //   Report Size (1 bit)
+    0x95, 0x08,                   //   Report Count (8 bits)
+    0x81, 0x02,                   //   Input (Data, Variable, Absolute) -> Modifier byte
+    // Byte 1: Reserved byte
+    0x95, 0x01,                   //   Report Count (1)
+    0x75, 0x08,                   //   Report Size (8)
+    0x81, 0x01,                   //   Input (Constant) -> Reserved byte
+    // Bytes 2..7: 6 Standard Keycodes (0x00..0xFF, includes Volume/Mute 0x7F..0x81)
+    0x95, 0x06,                   //   Report Count (6)
+    0x75, 0x08,                   //   Report Size (8)
+    0x15, 0x00,                   //   Logical Minimum (0)
+    0x26, 0xFF, 0x00,             //   Logical Maximum (255 - includes Volume/Mute 0x7F..0x81)
+    0x05, 0x07,                   //   Usage Page (Key Codes)
+    0x19, 0x00,                   //   Usage Minimum (0)
+    0x2A, 0xFF, 0x00,             //   Usage Maximum (255)
+    0x81, 0x00,                   //   Input (Data, Array) -> 6 Keycodes
+    0xC0,                         // End Collection
+
+    // ------------------------------------------------------------------------
+    // Collection 2: Consumer Control Media Transport Bitmask (Report ID 2)
+    // ------------------------------------------------------------------------
+    0x05, 0x0C,                   // Usage Page (Consumer)
+    0x09, 0x01,                   // Usage (Consumer Control)
+    0xA1, 0x01,                   // Collection (Application)
+    0x85, REPORT_ID_MEDIA,        //   Report ID (2)
+    0x05, 0x0C,                   //   Usage Page (Consumer)
+    0x15, 0x00,                   //   Logical Minimum (0)
+    0x25, 0x01,                   //   Logical Maximum (1)
+    0x09, 0xCD,                   //   Bit 0 (0x01): Play / Pause
+    0x09, 0xB5,                   //   Bit 1 (0x02): Scan Next Track
+    0x09, 0xB6,                   //   Bit 2 (0x04): Scan Previous Track
+    0x09, 0xB7,                   //   Bit 3 (0x08): Stop
+    0x75, 0x01,                   //   Report Size (1 bit)
+    0x95, 0x04,                   //   Report Count (4 bits)
+    0x81, 0x02,                   //   Input (Data, Variable, Absolute)
+    0x75, 0x01,                   //   Report Size (1 bit)
+    0x95, 0x04,                   //   Report Count (4 padding bits)
+    0x81, 0x01,                   //   Input (Constant)
+    0xC0                          // End Collection
 };
 
 // ============================================================================
@@ -262,11 +289,13 @@ static Preferences g_prefs;
 // 5. BLE HID SERVER STATE (Built-in ESP32 Core 3.x BLEHIDDevice)
 // ============================================================================
 
-static BLEServer*         g_pServer      = nullptr;
-static BLEHIDDevice*      g_pHid         = nullptr;
-static BLECharacteristic* g_pKbInputChar = nullptr;
-static BLECharacteristic* g_pKbOutputChar = nullptr;
-static volatile bool      g_bleConnected = false;
+static BLEServer*         g_pServer         = nullptr;
+static BLEHIDDevice*      g_pHid            = nullptr;
+static BLECharacteristic* g_pKbInputChar    = nullptr;
+static BLECharacteristic* g_pMediaInputChar = nullptr;
+static BLECharacteristic* g_pKbOutputChar   = nullptr;
+static volatile bool      g_bleConnected    = false;
+static bool               g_lastMediaWasKb  = false;
 
 static void forceEnableCccdNotifications(BLECharacteristic* pChar) {
     if (pChar == nullptr) return;
@@ -308,6 +337,7 @@ class MacropadServerCallbacks : public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) override {
         g_bleConnected = true;
         forceEnableCccdNotifications(g_pKbInputChar);
+        forceEnableCccdNotifications(g_pMediaInputChar);
         Serial.println("EVENT:BLE:CONNECTED");
     }
 
@@ -436,24 +466,28 @@ void initBleHid() {
 
     g_pHid = new BLEHIDDevice(g_pServer);
     g_pHid->manufacturer()->setValue("Seeed Studio DIY");
-    g_pHid->pnp(0x02, 0x2886, 0x0046, 0x0110);
+    g_pHid->pnp(0x02, 0x2886, 0x0046, 0x0111);
     g_pHid->hidInfo(0x00, 0x01);
     g_pHid->reportMap((uint8_t*)HID_REPORT_MAP, sizeof(HID_REPORT_MAP));
 
     MacropadReportCallbacks* pReportCb = new MacropadReportCallbacks();
-    g_pKbInputChar = g_pHid->inputReport(REPORT_ID_KEYBOARD);
+    g_pKbInputChar    = g_pHid->inputReport(REPORT_ID_KEYBOARD);
+    g_pMediaInputChar = g_pHid->inputReport(REPORT_ID_MEDIA);
 
     // Unlock 0x2908 (Report Reference) & 0x2902 (CCCD) permissions before startServices()
     fixHidReportPermissions(g_pKbInputChar, pReportCb);
+    fixHidReportPermissions(g_pMediaInputChar, pReportCb);
 
     // IMPORTANT: startServices() MUST be called before setBatteryLevel(100), because
     // BLECharacteristic::m_pService is only initialized inside BLEService::start()!
     g_pHid->startServices();
     g_pHid->setBatteryLevel(100);
 
-    // Set initial 8-byte zero report AFTER startServices() (once GATT attribute handle is created)
+    // Set initial zero reports AFTER startServices() (once GATT attribute handles are created)
     uint8_t zeroKb[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
     g_pKbInputChar->setValue(zeroKb, sizeof(zeroKb));
+    uint8_t zeroMedia[1] = { 0 };
+    g_pMediaInputChar->setValue(zeroMedia, sizeof(zeroMedia));
 
     BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
     pAdvertising->setAppearance(HID_KEYBOARD);
@@ -493,26 +527,56 @@ void releaseBleKeyboardReport() {
 }
 
 void sendBleMediaReport(uint16_t mediaUsage) {
+    if (!isBleReady()) return;
     if (mediaUsage == 0) {
-        releaseBleKeyboardReport();
+        releaseBleMediaReport();
         return;
     }
-    uint8_t hidKey = 0;
-    switch (mediaUsage) {
-        case MEDIA_VOL_UP:     hidKey = 0x80; break; // Keyboard Volume Up
-        case MEDIA_VOL_DOWN:   hidKey = 0x81; break; // Keyboard Volume Down
-        case MEDIA_MUTE:       hidKey = 0x7F; break; // Keyboard Mute
-        case MEDIA_PLAY_PAUSE: hidKey = HID_KEY_F8; break;
-        case MEDIA_PREV_TRACK: hidKey = HID_KEY_F7; break;
-        case MEDIA_NEXT_TRACK: hidKey = HID_KEY_F9; break;
-        default:               hidKey = 0x80; break;
+
+    // Volume Up/Down/Mute stay on the working Keyboard report path (Report ID 1)
+    if (mediaUsage == MEDIA_VOL_UP || mediaUsage == MEDIA_VOL_DOWN || mediaUsage == MEDIA_MUTE) {
+        if (g_pKbInputChar == nullptr) return;
+        forceEnableCccdNotifications(g_pKbInputChar);
+        uint8_t kbKeyByte = (mediaUsage == MEDIA_VOL_UP) ? 0x80 :
+                            (mediaUsage == MEDIA_VOL_DOWN) ? 0x81 : 0x7F;
+        g_lastMediaWasKb = true;
+        uint8_t report[8] = { 0x00, 0x00, kbKeyByte, 0x00, 0x00, 0x00, 0x00, 0x00 };
+        g_pKbInputChar->setValue(report, sizeof(report));
+        g_pKbInputChar->notify();
+        Serial.printf("EVENT:BLE:REPORT_SENT:MEDIA:0x%04X\n", mediaUsage);
+        return;
     }
-    sendBleKeyboardReport(0x00, hidKey);
-    Serial.printf("EVENT:BLE:REPORT_SENT:MEDIA:%u\n", mediaUsage);
+
+    // Play/Pause, Next, Previous, and Stop use the Consumer Control bitmask (Report ID 2)
+    if (g_pMediaInputChar == nullptr) return;
+    forceEnableCccdNotifications(g_pMediaInputChar);
+    uint8_t mediaMask = 0x00;
+    switch (mediaUsage) {
+        case MEDIA_PLAY_PAUSE: mediaMask = 0x01; break; // Bit 0: 0xCD Play/Pause
+        case MEDIA_NEXT_TRACK: mediaMask = 0x02; break; // Bit 1: 0xB5 Scan Next Track
+        case MEDIA_PREV_TRACK: mediaMask = 0x04; break; // Bit 2: 0xB6 Scan Previous Track
+        case MEDIA_STOP:       mediaMask = 0x08; break; // Bit 3: 0xB7 Stop
+        default:               return;
+    }
+
+    g_lastMediaWasKb = false;
+    g_pMediaInputChar->setValue(&mediaMask, 1);
+    g_pMediaInputChar->notify();
+    Serial.printf("EVENT:BLE:REPORT_SENT:MEDIA:0x%04X\n", mediaUsage);
 }
 
 void releaseBleMediaReport() {
-    releaseBleKeyboardReport();
+    if (!isBleReady()) return;
+    if (g_lastMediaWasKb) {
+        releaseBleKeyboardReport();
+        return;
+    }
+    if (g_pMediaInputChar == nullptr) return;
+    forceEnableCccdNotifications(g_pMediaInputChar);
+    delay(8);
+    uint8_t zeroMask = 0x00;
+    g_pMediaInputChar->setValue(&zeroMask, 1);
+    g_pMediaInputChar->notify();
 }
 
 // Helper to convert an ASCII character to a USB HID Keycode + Shift modifier
